@@ -22,6 +22,7 @@ import typing
 import subprocess
 import re
 import string
+import math
 
 # from subprocess import call
 
@@ -99,9 +100,10 @@ class transform:
     def __eq__(self, other):
         if (not isinstance(other, self.__class__)):
             return False
-        return (self.xScale == other.xScale and
-                self.xTranslate == other.xTranslate and self.yScale == other.yScale
-                and self.yTranslate == other.yTranslate)
+        return (math.isclose(self.xScale, other.xScale, abs_tol=0.000002) and
+                math.isclose(self.xTranslate, other.xTranslate, abs_tol=0.000002)
+                and math.isclose(self.yScale, other.yScale, abs_tol=0.000002)
+                and math.isclose(self.yTranslate, other.yTranslate, abs_tol=0.000002))
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -203,6 +205,7 @@ class wiss:
         totalY = maxH - minH
         for s in results:
             # math time!
+            s.transform = transform()
             s.transform.xScale = s.monitor.width / totalX
             s.transform.yScale = s.monitor.height / totalY
             s.transform.xTranslate = s.monitor.x / totalX
