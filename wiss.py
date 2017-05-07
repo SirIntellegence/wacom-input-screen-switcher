@@ -24,6 +24,11 @@ import re
 
 # from subprocess import call
 
+# transform matrix values
+#  | scale x    0           xtranslate|
+#  | 0          yscale      ytranslate|
+#  | 0          0           1         |
+
 
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
@@ -70,6 +75,8 @@ class wiss:
         for m in matches:
             results.append(device(m[0], int(m[1]), m[2].strip()))
         return results
+
+    def _getCurrOutput(self, id: int) -> str:
 
     def _getOutputList(self) -> list:
         pattern = re.compile(r"\S+")
