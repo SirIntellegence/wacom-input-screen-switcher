@@ -8,3 +8,14 @@ You will need to install screeninfo with pip for it to work. I currently do not 
 
 pip install screeninfo
 ```
+
+Example of key binding:
+
+In a startup script issue the command
+
+```
+#!bash
+xsetwacom --set <id or name of device pad (of "type: PAD") here> button 2 key XF86WWW
+```
+
+Then have your system run wiss.py when you press that button
