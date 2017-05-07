@@ -21,6 +21,7 @@ import getopt
 import typing
 import subprocess
 import re
+import string
 
 # from subprocess import call
 
@@ -35,7 +36,7 @@ def eprint(*args, **kwargs):
 
 
 class device:
-    deviceName = ""
+    deviceName = ''
     id
     type
 
@@ -47,8 +48,8 @@ class device:
 
 
 class transform:
-    xScale = 1
-    yScale = 1
+    xScale = 1.0
+    yScale = 1.0
     xTranslate = 0
     yTranslate = 0
 
@@ -86,22 +87,40 @@ class transform:
                                 _re20 + _re21 + _re22 + _re23 + _re24 + _re25,
                                 re.IGNORECASE | re.DOTALL)
 
-    def parse(input: str):
-        m = transformRegEx.search(input)
-        xScale = int(m.group(1))
-        xTranslate = int(m.group(7))
-        yScale = int(m.group(13))
-        yTranslate = int(m.group(16))
+    def parse(self, input: str):
+        m = self.transformRegEx.search(input)
+        self.xScale = float(m.group(1))
+        self.xTranslate = float(m.group(7))
+        self.yScale = float(m.group(13))
+        self.yTranslate = float(m.group(16))
         pass
 
     # def __init__(self, transformMatch):
+    def __eq__(self, other):
+        if (not isinstance(other, self.__class__)):
+            return False
+        return (self.xScale == other.xScale and
+                self.xTranslate == other.xTranslate and self.yScale == other.yScale
+                and self.yTranslate == other.yTranslate)
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def toTransformString(self):
+        return '{0:f} 0.0 {1:f}, 0.0 {2:f} {3:f} 0.0 0.0 1'.format(self.xScale,
+                                                                   self.xTranslate, self.yScale,
+                                                                   self.yTranslate)
 
 
 class screen:
     transform = transform()
+    monitor = None
 
 
 class wiss:
+    devices = []
+    screens = []
+
     def __init__(self):
 
         pass
@@ -111,44 +130,90 @@ class wiss:
 
     def moveOutput(self, argv):
         try:
-            opts, args = getopt.getopt(argv, "")
+            opts, args = getopt.getopt(argv, '')
         except getopt.GetoptError:
             self.__usage()
             sys.exit(2)
         if (len(opts) > 0 or len(args) > 0):
             eprint("Program arguments are not supported at this time. Sorry.")
             sys.exit(3)
-        devices = self.getDevices()
-        if (len(devices) < 1):
+        self._init()
+        self.moveToNext()
+        pass
+
+    def moveToNext(self):
+        currArea = self.getMappedArea(self.devices[0])
+        currIndex = -1
+        for i in range(0, len(self.screens)):
+            if (currArea != self.screens[i].transform):
+                continue
+            currIndex = i
+            break
+        # move next
+        currIndex += 1
+        if (currIndex >= len(self.screens)):
+            currIndex = 0
+        newArea = self.screens[currIndex].transform
+        for d in self.devices:
+            self.setMappedArea(d, newArea)
+        pass
+
+    def _init(self):
+        self.devices = self.getDevices()
+        if (len(self.devices) < 1):
             eprint("No tablet devices were found")
             sys.exit(4)
-        screens = self.getScreens()
+        self.screens = self.getScreens()
         pass
 
     def getDevices(self) -> list:
-        tempResult = subprocess.check_output(["xsetwacom", "--list",
-                                              "devices"], bufsize=100).decode("utf-8")
-        matches = re.findall(r"(.+)\tid: (\d+)\ttype:\s(.+)\s*", tempResult)
+        tempResult = subprocess.check_output(['xsetwacom', '--list',
+                                              'devices'], bufsize=100).decode('utf-8')
+        matches = re.findall(r'(.+)\tid: (\d+)\ttype:\s(.+)\s*', tempResult)
         results = []
         for m in matches:
             results.append(device(m[0], int(m[1]), m[2].strip()))
         return results
 
-    def _getCurrOutput(self, device: device) -> str:
-        pass
-
     def getScreens(self) -> list:
         monitors = screeninfo.get_monitors()
-        totalWidth = 0
-        totalHeight = 0
+        maxW = 0
+        maxH = 0
+        # be able to handle screens located at < 0
+        # and the case where no screens are located at 0
+        minW = 0
+        minH = 0
         results = []
+        for m in monitors:
+            s = screen()
+            s.monitor = m
+            if (m.x < minW):
+                minW = m.x
+            if (m.y < minH):
+                minH = m.y
+            extentW = m.width + m.x
+            extentY = m.height + m.y
+            if (extentW > maxW):
+                maxW = extentW
+            if (extentY > maxH):
+                maxH = extentY
+            results.append(s)
+
+        totalX = maxW - minW
+        totalY = maxH - minH
+        for s in results:
+            # math time!
+            s.transform.xScale = s.monitor.width / totalX
+            s.transform.yScale = s.monitor.height / totalY
+            s.transform.xTranslate = s.monitor.x / totalX
+            s.transform.yTranslate = s.monitor.y / totalY
         return results
 
     # def _getOutputList(self) -> list:
-    #     pattern = re.compile(r"\S+")
+    #     pattern = re.compile(r'\S+')
     #     # note: may return invalid results if there is more than one xscreen
     #     tempResult = subprocess.check_output(
-    #         ["xrandr"], bufsize=100).decode("utf-8")
+    #         ['xrandr'], bufsize=100).decode('utf-8')
     #     first = false
     #     results = []
     #     for line in tempResult.split('\n'):
@@ -162,11 +227,26 @@ class wiss:
     #     return results
 
     def getMappedArea(self, device: device):
-        call()
-        result = transform()
+        ps = subprocess.Popen(('xinput', '--list-props', str(device.id)),
+                              stdout=subprocess.PIPE)
+        tempResult = subprocess.check_output(
+            ('grep', 'Coordinate Transformation Matrix'), stdin=ps.stdout).decode('utf-8')
+        t = transform()
+        t.parse(tempResult)
+        return t
+
+    def setMappedArea(self, device: device, transform: transform):
+        subprocess.check_call(('xinput', 'set-prop', str(device.id), '--type=float',
+                               'Coordinate Transformation Matrix',
+                               str(transform.xScale), '0.0',
+                               str(transform.xTranslate),  # end line 1
+                               '0.0', str(transform.yScale),
+                               str(transform.yTranslate),  # end line 2
+                               '0.0', '0.0', '1'))
+                            #    transform.toTransformString()))
         pass
 
 
-if (__name__ == "__main__"):
+if (__name__ == '__main__'):
     wiss = wiss()
     wiss.moveOutput(sys.argv[1:])
